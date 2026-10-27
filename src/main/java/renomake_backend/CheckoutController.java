@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestClientException;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -25,21 +27,24 @@ import java.util.UUID;
 @CrossOrigin(origins = {
         "https://viniciosalvees.github.io",
         "http://localhost:5173"
-})
+}, allowCredentials = "true")
 public class CheckoutController {
 
     private static final String API_MERCADO_PAGO =
             "https://api.mercadopago.com/v1/orders";
 
-    private static final String SITE_RENOMAKE =
-            "https://viniciosalvees.github.io/Renomake/";
-
     private final JdbcTemplate jdbcTemplate;
     private final RestClient restClient;
+    private final String frontendUrl;
 
-    public CheckoutController(JdbcTemplate jdbcTemplate) {
+    public CheckoutController(
+            JdbcTemplate jdbcTemplate,
+            @Value("${app.frontend-url}") String frontendUrl) {
         this.jdbcTemplate = jdbcTemplate;
         this.restClient = RestClient.create();
+        this.frontendUrl = frontendUrl.endsWith("/")
+                ? frontendUrl
+                : frontendUrl + "/";
     }
 
     private record Pedido(
@@ -57,7 +62,14 @@ public class CheckoutController {
 
     @PostMapping("/{idPedido}")
     public ResponseEntity<?> criarCheckout(
-            @PathVariable Long idPedido) {
+            @PathVariable Long idPedido,
+            HttpSession session) {
+
+        Object usuarioAutenticado = session.getAttribute("idUsuario");
+        if (!(usuarioAutenticado instanceof Number idUsuario)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensagem", "Faça login para continuar."));
+        }
 
         String accessToken = System.getenv("MP_ACCESS_TOKEN");
 
@@ -80,6 +92,7 @@ public class CheckoutController {
             JOIN USUARIOS u
                 ON u.ID_USUARIO = p.ID_USUARIO
             WHERE p.ID_PEDIDO = ?
+              AND p.ID_USUARIO = ?
             """,
                 (rs, rowNum) -> new Pedido(
                         rs.getLong("ID_PEDIDO"),
@@ -87,7 +100,8 @@ public class CheckoutController {
                         rs.getBigDecimal("VALOR_TOTAL"),
                         rs.getString("EMAIL")
                 ),
-                idPedido
+                idPedido,
+                idUsuario.longValue()
         );
 
         if (pedidos.isEmpty()) {
@@ -241,11 +255,11 @@ public class CheckoutController {
 
             Map<String, Object> configOnline = Map.of(
                     "success_url",
-                    SITE_RENOMAKE + "?checkout=success&pedido=" + idPedido,
+                    frontendUrl + "?checkout=success&pedido=" + idPedido,
                     "failure_url",
-                    SITE_RENOMAKE + "?checkout=failure&pedido=" + idPedido,
+                    frontendUrl + "?checkout=failure&pedido=" + idPedido,
                     "pending_url",
-                    SITE_RENOMAKE + "?checkout=pending&pedido=" + idPedido,
+                    frontendUrl + "?checkout=pending&pedido=" + idPedido,
                     "auto_return", "approved"
             );
 
