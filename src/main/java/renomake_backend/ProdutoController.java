@@ -14,7 +14,7 @@ import java.util.Map;
 @CrossOrigin(origins = {
         "https://viniciosalvees.github.io",
         "http://localhost:5173"
-})
+}, allowCredentials = "true")
 public class ProdutoController {
 
     private final JdbcTemplate jdbcTemplate;

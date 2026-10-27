@@ -1,6 +1,3 @@
-@'
-
-# Arquivos locais e credenciais
 target/
 .env
 .env.*
@@ -10,4 +7,3 @@ erro-*.txt
 .idea/
 .vscode/
 *.iml
-'@ | Add-Content .gitignore

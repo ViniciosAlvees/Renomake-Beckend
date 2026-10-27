@@ -11,6 +11,7 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import jakarta.servlet.http.HttpSession;
 
 import java.math.BigDecimal;
 import java.sql.PreparedStatement;
@@ -22,7 +23,7 @@ import java.util.Map;
 @CrossOrigin(origins = {
         "https://viniciosalvees.github.io",
         "http://localhost:5173"
-})
+}, allowCredentials = "true")
 public class PedidoController {
 
     private final JdbcTemplate jdbcTemplate;
@@ -44,24 +45,16 @@ public class PedidoController {
             String ativo
     ) {}
 
-    @PostMapping("/{idUsuario}")
+    @PostMapping
     @Transactional
     public ResponseEntity<?> criarPedido(
-            @PathVariable Long idUsuario,
+            HttpSession session,
             @Valid @RequestBody PedidoRequest dados) {
 
-        Integer usuarioExiste = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM USUARIOS WHERE ID_USUARIO = ?",
-                Integer.class,
-                idUsuario
-        );
-
-        if (usuarioExiste == null || usuarioExiste == 0) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of(
-                            "mensagem",
-                            "Usuário não encontrado."
-                    ));
+        Long idUsuario = usuarioAutenticado(session);
+        if (idUsuario == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensagem", "Faça login para continuar."));
         }
 
         Integer enderecoValido = jdbcTemplate.queryForObject("""
@@ -248,5 +241,49 @@ public class PedidoController {
                         "status",
                         "AGUARDANDO_PAGAMENTO"
                 ));
+    }
+
+    @GetMapping("/{idPedido}")
+    public ResponseEntity<?> consultarPedido(
+            @PathVariable Long idPedido,
+            HttpSession session) {
+        Long idUsuario = usuarioAutenticado(session);
+        if (idUsuario == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensagem", "Faça login para continuar."));
+        }
+
+        List<Map<String, Object>> pedidos = jdbcTemplate.queryForList("""
+                SELECT ID_PEDIDO AS "idPedido",
+                       STATUS AS "status",
+                       VALOR_TOTAL AS "valorTotal",
+                       DATA_PEDIDO AS "dataPedido"
+                FROM PEDIDOS
+                WHERE ID_PEDIDO = ?
+                  AND ID_USUARIO = ?
+                """, idPedido, idUsuario);
+        if (pedidos.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        List<Map<String, Object>> itens = jdbcTemplate.queryForList("""
+                SELECT i.ID_PRODUTO AS "idProduto",
+                       p.NOME AS "nome",
+                       i.QUANTIDADE AS "quantidade",
+                       i.PRECO_UNITARIO AS "precoUnitario"
+                FROM ITENS_PEDIDO i
+                JOIN PRODUTOS p ON p.ID_PRODUTO = i.ID_PRODUTO
+                WHERE i.ID_PEDIDO = ?
+                ORDER BY i.ID_ITEM
+                """, idPedido);
+        return ResponseEntity.ok(Map.of(
+                "pedido", pedidos.get(0),
+                "itens", itens
+        ));
+    }
+
+    private Long usuarioAutenticado(HttpSession session) {
+        Object idUsuario = session.getAttribute("idUsuario");
+        return idUsuario instanceof Number id ? id.longValue() : null;
     }
 }

@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpSession;
 
 import java.util.List;
 import java.util.Map;
@@ -17,7 +18,7 @@ import java.util.Map;
 @CrossOrigin(origins = {
         "https://viniciosalvees.github.io",
         "http://localhost:5173"
-})
+}, allowCredentials = "true")
 public class CarrinhoController {
 
     private final JdbcTemplate jdbcTemplate;
@@ -35,13 +36,13 @@ public class CarrinhoController {
             @NotNull @Min(1) Integer quantidade
     ) {}
 
-    @GetMapping("/{idUsuario}")
+    @GetMapping
     public ResponseEntity<?> listarCarrinho(
-            @PathVariable Long idUsuario) {
-
-        if (!usuarioExiste(idUsuario)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("mensagem", "Usuário não encontrado."));
+            HttpSession session) {
+        Long idUsuario = usuarioAutenticado(session);
+        if (idUsuario == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensagem", "Faça login para continuar."));
         }
 
         String sql = """
@@ -68,14 +69,15 @@ public class CarrinhoController {
         return ResponseEntity.ok(itens);
     }
 
-    @PostMapping("/{idUsuario}/itens")
+    @PostMapping("/itens")
     public ResponseEntity<?> adicionarProduto(
-            @PathVariable Long idUsuario,
+            HttpSession session,
             @Valid @RequestBody ItemRequest dados) {
 
-        if (!usuarioExiste(idUsuario)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("mensagem", "Usuário não encontrado."));
+        Long idUsuario = usuarioAutenticado(session);
+        if (idUsuario == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensagem", "Faça login para continuar."));
         }
 
         Integer produtoExiste = jdbcTemplate.queryForObject("""
@@ -135,15 +137,16 @@ public class CarrinhoController {
         ));
     }
 
-    @PutMapping("/{idUsuario}/itens/{idProduto}")
+    @PutMapping("/itens/{idProduto}")
     public ResponseEntity<?> atualizarQuantidade(
-            @PathVariable Long idUsuario,
+            HttpSession session,
             @PathVariable Long idProduto,
             @Valid @RequestBody QuantidadeRequest dados) {
 
-        if (!usuarioExiste(idUsuario)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("mensagem", "Usuário não encontrado."));
+        Long idUsuario = usuarioAutenticado(session);
+        if (idUsuario == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensagem", "Faça login para continuar."));
         }
 
         int linhas = jdbcTemplate.update("""
@@ -171,10 +174,16 @@ public class CarrinhoController {
         ));
     }
 
-    @DeleteMapping("/{idUsuario}/itens/{idProduto}")
+    @DeleteMapping("/itens/{idProduto}")
     public ResponseEntity<?> removerProduto(
-            @PathVariable Long idUsuario,
+            HttpSession session,
             @PathVariable Long idProduto) {
+
+        Long idUsuario = usuarioAutenticado(session);
+        if (idUsuario == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensagem", "Faça login para continuar."));
+        }
 
         int linhas = jdbcTemplate.update("""
             DELETE FROM CARRINHO
@@ -198,16 +207,8 @@ public class CarrinhoController {
         ));
     }
 
-    private boolean usuarioExiste(Long idUsuario) {
-        Integer quantidade = jdbcTemplate.queryForObject("""
-            SELECT COUNT(*)
-            FROM USUARIOS
-            WHERE ID_USUARIO = ?
-            """,
-                Integer.class,
-                idUsuario
-        );
-
-        return quantidade != null && quantidade > 0;
+    private Long usuarioAutenticado(HttpSession session) {
+        Object idUsuario = session.getAttribute("idUsuario");
+        return idUsuario instanceof Number id ? id.longValue() : null;
     }
 }
