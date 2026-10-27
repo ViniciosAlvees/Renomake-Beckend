@@ -1,0 +1,13 @@
+@'
+
+# Arquivos locais e credenciais
+target/
+.env
+.env.*
+!.env.example
+*.log
+erro-*.txt
+.idea/
+.vscode/
+*.iml
+'@ | Add-Content .gitignore
